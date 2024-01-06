@@ -1,0 +1,100 @@
+name: Minimaze .NET 8 
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build:
+
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+
+    runs-on: windows-latest  # For a list of available runner types, refer to
+                             # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
+
+    steps:
+    # Install the .NET Core workload
+    - name: Install .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.x.x
+
+    # Add  MSBuild to the PATH: https://github.com/microsoft/setup-msbuild
+    - name: Setup MSBuild.exe
+      uses: microsoft/setup-msbuild@v1.0.2
+
+    # Check-out and set .NET framework
+    - name: Build commands
+    - uses: actions/checkout@v3
+    - uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.x.x'
+
+    # Default build
+    - name: Default build
+    - run: dotnet publish -p:PublishSingleFile=true
+
+    # Single file compressed
+    - name: Single file compressed
+    - run: dotnet publish -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
+
+    # IL trimming
+    - name: IL trimming
+    - run: dotnet publish -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=true
+
+    # Native AOT compilation
+    - run: Native AOT compilation
+    - run: dotnet publish -p:PublishAot=true
+
+    # Dropping unused framework features
+    - name: Dropping unused framework features
+    - run: dotnet publish -p:PublishAot=true -p:OptimizationPreference=Size -p:StackTraceSupport=false -p:InvariantGlobalization=true -p:UseSystemResourceKeys=true
+
+    # Install Bflat via Winget
+    - name: Install Bflat via Winget
+    - run: winget install bflat
+
+    # Bflat build
+    - name: Bflat build
+    - run: bflat build -Os --no-stacktrace-data --no-globalization --no-exception-messages
+
+    # Bflat with zerolib
+    - name: Bflat with zerolib
+    - run: bflat build -Os --stdlib:zero
+
+    # Direct pinvoke
+    - name: Direct pinvoke
+    #- run: bflat build -Os --stdlib:zero -i gdi32 -i user32
+    - run: bflat build -Os --stdlib:zero -i gdi32 -i user32 --ldflags C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x64\gdi32.lib
+
+    # Debugging support and relocations
+    - name: Debugging support and relocations
+    - run: bflat build -Os --stdlib:zero -i gdi32 -i user32 --ldflags C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x64\gdi32.lib --no-pie --no-debug-info
+
+    # Building for x86
+    - name: Building for x86
+    - run: bflat build -Os --stdlib:zero -i gdi32 -i user32 --ldflags C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\gdi32.lib --no-pie --no-debug-info -arch x86
+
+    # Set-up env variable
+    - name: Set-up env variable
+    - id: Command_Print
+    - run: |
+        command_print = bflat build -Os --stdlib:zero -i gdi32 -i user32 --ldflags C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x64\gdi32.lib --no-pie --no-debug-info -arch x86 -x
+        echo "Output [$command_print]"
+        echo "command_print = $command_print" >> $GITHUB_OUTPUT
+      
+    # Crinkler
+    - name: Crinkler
+    - run: bflat build -Os --stdlib:zero -i gdi32 -i user32 --ldflags C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x64\gdi32.lib --no-pie --no-debug-info -arch x86 -c
+    #- run: crinkler minimaze.obj /out:minimaze-crinkled.exe /entry:__managed__Main C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\user32.lib C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\kernel32.lib C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\gdi32.lib C:\Users\michals\AppData\Local\Microsoft\WinGet\Packages\MichalStrehovsky.bflat_Microsoft.Winget.Source_8wekyb3d8bbwe\lib\windows\x86\zerolibnative.obj /subsystem:windows
+    - run: crinkler minimaze.obj /out:minimaze-crinkled.exe /entry:__managed__Main C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\user32.lib C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\kernel32.lib C:\Progra~2\WI3CF2~1\10\Lib\10.0.22621.0\um\x86\gdi32.lib ${{steps.Command_Print.outputs.command_print}} /subsystem:windows 
+    
+    # QRencode
+    - name: QR encode
+    - run: qrencode -r minimaze-crinkled.exe -l M -o minimaze-crinkled.png -8
+    
